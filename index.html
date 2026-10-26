@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VitaPlus – ร้านวิตามินและอาหารเสริม</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<style>body{font-family:'Noto Sans Thai',system-ui,sans-serif;background:#F6F8F7;color:#14231C}
+.btn{background:#0F5C4D;color:#fff;border-radius:8px;padding:.5rem 1rem;font-weight:600}.btn:hover{background:#0b4a3e}
+.btn2{border:1px solid #0F5C4D;color:#0F5C4D;border-radius:8px;padding:.5rem 1rem;font-weight:600}
+.in{border:1px solid #DDE5E1;border-radius:8px;padding:.5rem .75rem;width:100%;background:#fff}
+.card{background:#fff;border:1px solid #DDE5E1;border-radius:12px}
+:focus-visible{outline:2px solid #F2A900;outline-offset:2px}</style></head>
+<body><div id="app"></div>
+<script>
+// ---------- Data layer (localStorage = mock DB) ----------
+const K='vitaplus_db_v1';
+const seed=()=>({users:[{id:1,name:'ผู้ดูแลระบบ',email:'admin@shop.com',password:'admin123',role:'admin',address:''}],
+products:[['วิตามินซี 1000 มก.','วิตามิน','เสริมภูมิคุ้มกัน 60 เม็ด',299,40,'🍊'],['วิตามินดี 3','วิตามิน','บำรุงกระดูก 90 แคปซูล',350,25,'☀️'],['โอเมก้า 3 น้ำมันปลา','อาหารเสริม','บำรุงหัวใจและสมอง 100 แคปซูล',590,30,'🐟'],['แมกนีเซียม','แร่ธาตุ','ช่วยผ่อนคลายกล้ามเนื้อ 120 เม็ด',420,4,'💊'],['ซิงค์ 15 มก.','แร่ธาตุ','ดูแลผิวและภูมิคุ้มกัน 90 เม็ด',260,50,'🔩'],['โปรไบโอติก','อาหารเสริม','สมดุลระบบทางเดินอาหาร 30 ซอง',690,18,'🦠'],['คอลลาเจนไทป์ 2','อาหารเสริม','ดูแลข้อเข่า 60 แคปซูล',880,12,'🦴'],['มัลติวิตามิน','วิตามิน','รวม 24 ชนิด 120 เม็ด',450,3,'🌈']]
+.map((p,i)=>({id:i+1,name:p[0],category:p[1],description:p[2],price:p[3],stock:p[4],image_url:p[5]})),
+orders:[],seq:{user:2,product:9,order:1}});
+let db=JSON.parse(localStorage.getItem(K)||'null')||seed();
+let sess=localStorage.getItem(K+'_s'), cart=JSON.parse(localStorage.getItem(K+'_c')||'[]');
+const save=()=>{localStorage.setItem(K,JSON.stringify(db));localStorage.setItem(K+'_c',JSON.stringify(cart))};
+const me=()=>db.users.find(u=>u.email===sess);
+const LOW=5, baht=n=>'฿'+n.toLocaleString('th-TH');
+const $=(s)=>document.querySelector(s), esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let q='',cat='ทั้งหมด',msg='';
+const flash=m=>{msg=m;render();setTimeout(()=>{msg='';render()},2500)};
+
+// ---------- Actions ----------
+function register(f){const d=Object.fromEntries(new FormData(f));
+ if(db.users.some(u=>u.email===d.email))return flash('อีเมลนี้ถูกใช้แล้ว');
+ if(d.password.length<6)return flash('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+ db.users.push({id:db.seq.user++,name:d.name,email:d.email,password:d.password,role:'customer',address:d.address});
+ sess=d.email;localStorage.setItem(K+'_s',sess);save();location.hash='#/';}
+function login(f){const d=Object.fromEntries(new FormData(f));
+ const u=db.users.find(u=>u.email===d.email&&u.password===d.password);
+ if(!u)return flash('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+ sess=u.email;localStorage.setItem(K+'_s',sess);location.hash=u.role==='admin'?'#/admin':'#/';}
+function logout(){sess=null;localStorage.removeItem(K+'_s');location.hash='#/';}
+function add(id){const p=db.products.find(p=>p.id===id),c=cart.find(c=>c.id===id);
+ if((c?c.qty:0)>=p.stock)return flash('สต็อกไม่พอ');
+ c?c.qty++:cart.push({id,qty:1});save();flash('เพิ่มลงตะกร้าแล้ว');}
+function setQty(id,d){const c=cart.find(c=>c.id===id),p=db.products.find(p=>p.id===id);
+ c.qty=Math.min(p.stock,c.qty+d);if(c.qty<=0)cart=cart.filter(x=>x.id!==id);save();render();}
+function checkout(f){const u=me();const d=Object.fromEntries(new FormData(f));
+ for(const c of cart){const p=db.products.find(p=>p.id===c.id);if(p.stock<c.qty)return flash(p.name+' เหลือไม่พอ');}
+ const items=cart.map(c=>{const p=db.products.find(p=>p.id===c.id);p.stock-=c.qty;return{id:p.id,name:p.name,price:p.price,qty:c.qty}});
+ db.orders.push({id:db.seq.order++,user:u.email,items,total:items.reduce((s,i)=>s+i.price*i.qty,0),address:d.address,status:'Pending',date:new Date().toLocaleString('th-TH')});
+ cart=[];save();location.hash='#/orders';}
+function saveProduct(f){const d=Object.fromEntries(new FormData(f)),id=+d.id;
+ const o={name:d.name,category:d.category,description:d.description,price:+d.price,stock:+d.stock,image_url:d.image_url||'📦'};
+ if(id)Object.assign(db.products.find(p=>p.id===id),o);else db.products.push({id:db.seq.product++,...o});
+ editId=null;save();render();}
+function delProduct(id){if(confirm('ลบสินค้านี้?')){db.products=db.products.filter(p=>p.id!==id);save();render();}}
+function setStatus(id,s){db.orders.find(o=>o.id===id).status=s;save();render();}
+function adjStock(id,d){const p=db.products.find(p=>p.id===id);p.stock=Math.max(0,p.stock+d);save();render();}
+let editId=null;
+const edit=id=>{editId=id;render();};
+
+// ---------- Views ----------
+const field=(n,l,t='text',v='',x='')=>`<label class="block text-sm mb-3">${l}<input class="in mt-1" name="${n}" type="${t}" value="${esc(v)}" ${x}></label>`;
+const nav=()=>{const u=me();return`<header class="bg-[#0F5C4D] text-white"><div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4 flex-wrap">
+<a href="#/" class="text-xl font-extrabold">Vita<span class="text-[#F2A900]">Plus</span></a><span class="flex-1"></span>
+<a href="#/">สินค้า</a>${u&&u.role==='admin'?'<a href="#/admin">หลังร้าน</a>':''}${u&&u.role==='customer'?'<a href="#/orders">คำสั่งซื้อของฉัน</a>':''}
+<a href="#/cart" class="bg-white/15 rounded-full px-3 py-1">ตะกร้า (${cart.reduce((s,c)=>s+c.qty,0)})</a>
+${u?`<span class="text-sm opacity-80">${esc(u.name)}</span><button onclick="logout()" class="underline text-sm">ออกจากระบบ</button>`:'<a href="#/login" class="font-semibold">เข้าสู่ระบบ</a>'}</div></header>`};
+
+function shop(){const cats=['ทั้งหมด',...new Set(db.products.map(p=>p.category))];
+ const list=db.products.filter(p=>(cat==='ทั้งหมด'||p.category===cat)&&(p.name+p.description).includes(q));
+ return`<h1 class="text-3xl font-extrabold mb-1">วิตามินที่ใช่ สำหรับทุกวัน</h1><p class="mb-5 text-[#4a5d54]">เลือกหมวดหมู่หรือค้นหาชื่อสินค้า</p>
+ <div class="flex gap-2 flex-wrap mb-5"><input id="q" class="in max-w-xs" placeholder="ค้นหาสินค้า" value="${esc(q)}" oninput="q=this.value;render(true)">
+ ${cats.map(c=>`<button onclick="cat='${c}';render()" class="${c===cat?'btn':'btn2'}">${c}</button>`).join('')}</div>
+ <div class="grid grid-cols-2 md:grid-cols-4 gap-4">${list.map(p=>`<div class="card p-3 flex flex-col">
+ <div class="h-28 rounded-lg bg-[#E6F0EC] grid place-items-center text-5xl mb-3">${esc(p.image_url)}</div>
+ <div class="text-xs text-[#4a5d54]">${p.category}</div><div class="font-semibold">${esc(p.name)}</div>
+ <div class="text-sm text-[#4a5d54] flex-1">${esc(p.description)}</div>
+ <div class="flex items-center justify-between mt-3"><b>${baht(p.price)}</b>${p.stock?`<button class="btn text-sm" onclick="add(${p.id})">ใส่ตะกร้า</button>`:'<span class="text-red-700 text-sm">สินค้าหมด</span>'}</div>
+ ${p.stock>0&&p.stock<=LOW?`<div class="text-xs text-amber-700 mt-1">เหลือเพียง ${p.stock} ชิ้น</div>`:''}</div>`).join('')||'<p>ไม่พบสินค้าที่ค้นหา ลองเปลี่ยนคำค้นหรือหมวดหมู่</p>'}</div>`}
+
+function cartView(){if(!cart.length)return`<h1 class="text-2xl font-bold mb-3">ตะกร้าสินค้า</h1><p>ตะกร้าว่าง <a class="underline" href="#/">เลือกสินค้า</a></p>`;
+ const rows=cart.map(c=>({...db.products.find(p=>p.id===c.id),qty:c.qty}));const total=rows.reduce((s,r)=>s+r.price*r.qty,0),u=me();
+ return`<h1 class="text-2xl font-bold mb-4">ตะกร้าสินค้า</h1><div class="grid md:grid-cols-3 gap-5"><div class="md:col-span-2 card divide-y">
+ ${rows.map(r=>`<div class="p-3 flex items-center gap-3"><span class="text-3xl">${esc(r.image_url)}</span><div class="flex-1"><div class="font-semibold">${esc(r.name)}</div><div class="text-sm">${baht(r.price)}</div></div>
+ <button class="btn2" onclick="setQty(${r.id},-1)" aria-label="ลด">−</button><b>${r.qty}</b><button class="btn2" onclick="setQty(${r.id},1)" aria-label="เพิ่ม">+</button><b class="w-20 text-right">${baht(r.price*r.qty)}</b></div>`).join('')}</div>
+ <form class="card p-4" onsubmit="event.preventDefault();checkout(this)"><div class="flex justify-between mb-1"><span>ยอดรวมสินค้า</span><span>${baht(total)}</span></div>
+ <div class="flex justify-between mb-4 text-lg font-bold"><span>ยอดชำระ</span><span>${baht(total)}</span></div>
+ ${u?`<label class="block text-sm mb-3">ที่อยู่จัดส่ง<textarea class="in mt-1" name="address" required rows="3">${esc(u.address||'')}</textarea></label><button class="btn w-full">ยืนยันสั่งซื้อ</button>`:'<p class="mb-3 text-sm">กรุณาเข้าสู่ระบบก่อนสั่งซื้อ</p><a href="#/login" class="btn block text-center">เข้าสู่ระบบ</a>'}</form></div>`}
+
+function authView(reg){return`<div class="max-w-sm mx-auto card p-5"><h1 class="text-xl font-bold mb-4">${reg?'สมัครสมาชิก':'เข้าสู่ระบบ'}</h1>
+ <form onsubmit="event.preventDefault();${reg?'register':'login'}(this)">${reg?field('name','ชื่อ-นามสกุล','text','','required'):''}${field('email','อีเมล','email','','required')}${field('password','รหัสผ่าน','password','','required')}${reg?field('address','ที่อยู่จัดส่ง','text','','required'):''}
+ <button class="btn w-full">${reg?'สมัครสมาชิก':'เข้าสู่ระบบ'}</button></form>
+ <p class="text-sm mt-3">${reg?'มีบัญชีแล้ว? <a class="underline" href="#/login">เข้าสู่ระบบ</a>':'ยังไม่มีบัญชี? <a class="underline" href="#/register">สมัครสมาชิก</a>'}</p>
+ ${reg?'':'<p class="text-xs mt-3 text-[#4a5d54]">ทดลองแอดมิน: admin@shop.com / admin123</p>'}</div>`}
+
+const stBadge=s=>`<span class="rounded-full px-2 py-0.5 text-xs ${s==='Completed'?'bg-green-100 text-green-800':s==='Shipped'?'bg-blue-100 text-blue-800':s==='Cancelled'?'bg-red-100 text-red-800':'bg-amber-100 text-amber-800'}">${s}</span>`;
+function ordersView(){const mine=db.orders.filter(o=>o.user===sess).reverse();
+ return`<h1 class="text-2xl font-bold mb-4">คำสั่งซื้อของฉัน</h1>${mine.map(o=>`<div class="card p-4 mb-3"><div class="flex justify-between"><b>#${o.id}</b>${stBadge(o.status)}</div>
+ <div class="text-sm text-[#4a5d54]">${o.date} · จัดส่ง: ${esc(o.address)}</div><ul class="my-2 text-sm">${o.items.map(i=>`<li>${esc(i.name)} × ${i.qty}</li>`).join('')}</ul><b>${baht(o.total)}</b></div>`).join('')||'<p>ยังไม่มีคำสั่งซื้อ</p>'}`}
+
+function adminView(){const rev=db.orders.filter(o=>o.status!=='Cancelled').reduce((s,o)=>s+o.total,0),low=db.products.filter(p=>p.stock<=LOW),ep=editId!==null?(db.products.find(p=>p.id===editId)||{}):null;
+ const stat=(l,v,w)=>`<div class="card p-4"><div class="text-sm text-[#4a5d54]">${l}</div><div class="text-2xl font-extrabold ${w?'text-amber-700':''}">${v}</div></div>`;
+ return`<h1 class="text-2xl font-bold mb-4">หลังร้าน</h1><div class="grid grid-cols-3 gap-4 mb-6">${stat('ยอดขายรวม',baht(rev))}${stat('คำสั่งซื้อทั้งหมด',db.orders.length)}${stat('สินค้าสต็อกต่ำ (≤'+LOW+')',low.length,low.length)}</div>
+ ${low.length?`<div class="card p-3 mb-6 border-amber-400 text-sm">⚠️ สต็อกต่ำ: ${low.map(p=>`${esc(p.name)} (${p.stock})`).join(', ')}</div>`:''}
+ <div class="flex justify-between items-center mb-2"><h2 class="font-bold text-lg">จัดการสินค้า</h2><button class="btn" onclick="edit(0)">เพิ่มสินค้า</button></div>
+ ${ep?`<form class="card p-4 mb-3 grid md:grid-cols-3 gap-x-3" onsubmit="event.preventDefault();saveProduct(this)"><input type="hidden" name="id" value="${ep.id||0}">
+ ${field('name','ชื่อสินค้า','text',ep.name||'','required')}${field('category','หมวดหมู่','text',ep.category||'','required')}${field('image_url','ไอคอน (อีโมจิ)','text',ep.image_url||'')}
+ ${field('price','ราคา','number',ep.price??'','required min=0')}${field('stock','สต็อก','number',ep.stock??'','required min=0')}${field('description','รายละเอียด','text',ep.description||'')}
+ <div class="flex gap-2"><button class="btn">บันทึก</button><button type="button" class="btn2" onclick="edit(null)">ยกเลิก</button></div></form>`:''}
+ <div class="card overflow-x-auto mb-8"><table class="w-full text-sm"><tr class="text-left bg-[#E6F0EC]"><th class="p-2">สินค้า</th><th>หมวด</th><th>ราคา</th><th>สต็อก</th><th></th></tr>
+ ${db.products.map(p=>`<tr class="border-t"><td class="p-2">${esc(p.image_url)} ${esc(p.name)}</td><td>${p.category}</td><td>${baht(p.price)}</td>
+ <td><button onclick="adjStock(${p.id},-1)" class="px-2" aria-label="ลดสต็อก">−</button><b class="${p.stock<=LOW?'text-amber-700':''}">${p.stock}</b><button onclick="adjStock(${p.id},1)" class="px-2" aria-label="เพิ่มสต็อก">+</button></td>
+ <td class="p-2 whitespace-nowrap"><button class="underline mr-3" onclick="edit(${p.id})">แก้ไข</button><button class="underline text-red-700" onclick="delProduct(${p.id})">ลบ</button></td></tr>`).join('')}</table></div>
+ <h2 class="font-bold text-lg mb-2">จัดการคำสั่งซื้อ</h2>${[...db.orders].reverse().map(o=>`<div class="card p-3 mb-2 flex flex-wrap items-center gap-3 text-sm"><b>#${o.id}</b><span>${esc(o.user)}</span><span class="flex-1">${o.items.map(i=>esc(i.name)+'×'+i.qty).join(', ')}</span><b>${baht(o.total)}</b>${stBadge(o.status)}
+ <select class="in !w-auto" onchange="setStatus(${o.id},this.value)">${['Pending','Shipped','Completed','Cancelled'].map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}</select></div>`).join('')||'<p>ยังไม่มีคำสั่งซื้อ</p>'}`}
+
+// ---------- Router with route protection ----------
+function render(keepFocus){const r=location.hash.slice(1)||'/',u=me();let v;
+ if(r==='/admin'&&!(u&&u.role==='admin'))v=`<div class="card p-5 max-w-md mx-auto"><b>ไม่มีสิทธิ์เข้าถึง</b><p class="text-sm mt-1">หน้านี้สำหรับผู้ดูแลระบบเท่านั้น <a class="underline" href="#/login">เข้าสู่ระบบแอดมิน</a></p></div>`;
+ else if(r==='/orders'&&!u)v=authView(false);
+ else v={'/':shop,'/cart':cartView,'/login':()=>authView(false),'/register':()=>authView(true),'/orders':ordersView,'/admin':adminView}[r]?.()||shop();
+ $('#app').innerHTML=nav()+`<main class="max-w-6xl mx-auto px-4 py-6">${v}</main>`+(msg?`<div role="status" class="fixed bottom-4 left-1/2 -translate-x-1/2 bg-[#14231C] text-white px-4 py-2 rounded-lg">${msg}</div>`:'');
+ if(keepFocus){const i=$('#q');if(i){i.focus();i.setSelectionRange(q.length,q.length)}}}
+addEventListener('hashchange',()=>{editId=null;render()});render();
+</script></body></html>
